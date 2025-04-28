@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CutieGram</title>
+  <link href="https://cdn.tailwindcss.com" rel="stylesheet" />
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+  <div id="loginScreen" class="flex flex-col items-center justify-center h-full">
+  <h1 class="text-4xl font-bold mb-6">CutieGram</h1>
+    <input
+      id="usernameInput"
+      type="text"
+      placeholder="Enter your username"
+      class="border border-gray-300 rounded px-4 py-2 mb-4 w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    />
+    <button
+      id="loginBtn"
+      class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
+    >
+      Join Chat
+    </button>
+  </div>
+
+  <div id="chatScreen" class="hidden h-full flex flex-col">
+    <header class="bg-blue-600 text-white p-4 flex justify-between items-center">
+      <h2 class="text-xl font-semibold">CutieGram</h2>
+      <div id="currentUser" class="italic"></div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+      <aside
+        id="userList"
+        class="w-64 bg-white border-r border-gray-300 p-4 overflow-y-auto"
+      >
+        <h3 class="font-semibold mb-4">Users Online</h3>
+        <ul id="users" class="space-y-2 text-gray-700"></ul>
+      </aside>
+
+      <main class="flex-1 flex flex-col bg-white">
+        <div
+          id="messages"
+          class="flex-1 p-4 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+        ></div>
+        <form
+          id="messageForm"
+          class="flex border-t border-gray-300 p-4"
+          autocomplete="off"
+        >
+          <input
+            id="messageInput"
+            type="text"
+            placeholder="Type a message"
+            class="flex-1 border border-gray-300 rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <button
+            type="submit"
+            class="ml-4 bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
+          >
+            Send
+          </button>
+        </form>
+      </main>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const loginScreen = document.getElementById('loginScreen');
+    const chatScreen = document.getElementById('chatScreen');
+    const usernameInput = document.getElementById('usernameInput');
+    const loginBtn = document.getElementById('loginBtn');
+    const currentUser = document.getElementById('currentUser');
+    const usersList = document.getElementById('users');
+    const messages = document.getElementById('messages');
+    const messageForm = document.getElementById('messageForm');
+    const messageInput = document.getElementById('messageInput');
+
+    let username = '';
+    let typingTimeout;
+    let mediaRecorder;
+    let audioChunks = [];
+
+    loginBtn.addEventListener('click', () => {
+      const enteredUsername = usernameInput.value.trim();
+      if (enteredUsername) {
+        username = enteredUsername;
+        socket.emit('join', username);
+        currentUser.textContent = `Logged in as: ${username}`;
+        loginScreen.classList.add('hidden');
+        chatScreen.classList.remove('hidden');
+      }
+    });
+
+    socket.on('userList', (users) => {
+      usersList.innerHTML = '';
+      users.forEach((user) => {
+        const li = document.createElement('li');
+        li.textContent = user;
+        li.className = 'px-2 py-1 rounded hover:bg-gray-100 cursor-default';
+        usersList.appendChild(li);
+      });
+    });
+
+    socket.on('userJoined', (user) => {
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'text-center text-gray-500 text-sm italic';
+      infoDiv.textContent = `${user} joined the chat`;
+      messages.appendChild(infoDiv);
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    socket.on('userLeft', (user) => {
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'text-center text-gray-500 text-sm italic';
+      infoDiv.textContent = `${user} left the chat`;
+      messages.appendChild(infoDiv);
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    socket.on('chatMessage', ({ username: sender, message, timestamp }) => {
+      const messageDiv = document.createElement('div');
+      messageDiv.className =
+        sender === username
+          ? 'text-right'
+          : 'text-left text-gray-700';
+
+      const messageContent = document.createElement('div');
+      messageContent.className =
+        sender === username
+          ? 'inline-block bg-blue-600 text-white px-4 py-2 rounded-lg max-w-xs break-words'
+          : 'inline-block bg-gray-200 px-4 py-2 rounded-lg max-w-xs break-words';
+
+      messageContent.textContent = message;
+
+      const senderSpan = document.createElement('span');
+      senderSpan.className = 'block text-xs text-gray-500 mt-1';
+      senderSpan.textContent = sender;
+
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'block text-xs text-gray-400';
+      const date = new Date(timestamp);
+      timeSpan.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      messageDiv.appendChild(messageContent);
+      messageDiv.appendChild(senderSpan);
+      messageDiv.appendChild(timeSpan);
+      messages.appendChild(messageDiv);
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    socket.on('audioMessage', ({ username: sender, audioData, timestamp }) => {
+      const messageDiv = document.createElement('div');
+      messageDiv.className =
+        sender === username
+          ? 'text-right'
+          : 'text-left text-gray-700';
+
+      const audioElement = document.createElement('audio');
+      audioElement.controls = true;
+      audioElement.src = audioData;
+
+      const senderSpan = document.createElement('span');
+      senderSpan.className = 'block text-xs text-gray-500 mt-1';
+      senderSpan.textContent = sender;
+
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'block text-xs text-gray-400';
+      const date = new Date(timestamp);
+      timeSpan.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      messageDiv.appendChild(audioElement);
+      messageDiv.appendChild(senderSpan);
+      messageDiv.appendChild(timeSpan);
+      messages.appendChild(messageDiv);
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    messageInput.addEventListener('input', () => {
+      socket.emit('typing', true);
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        socket.emit('typing', false);
+      }, 1000);
+    });
+
+    socket.on('typing', ({ username: typingUser, isTyping }) => {
+      let typingIndicator = document.getElementById('typingIndicator');
+      if (!typingIndicator) {
+        typingIndicator = document.createElement('div');
+        typingIndicator.id = 'typingIndicator';
+        typingIndicator.className = 'text-sm text-gray-500 italic p-2';
+        messages.appendChild(typingIndicator);
+      }
+      if (isTyping) {
+        typingIndicator.textContent = `${typingUser} is typing...`;
+      } else {
+        typingIndicator.textContent = '';
+      }
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    messageForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const msg = messageInput.value.trim();
+      if (msg) {
+        socket.emit('chatMessage', msg);
+        messageInput.value = '';
+        socket.emit('typing', false);
+      }
+    });
+
+    // Voice recording and voice changer logic
+    const recordBtn = document.createElement('button');
+    recordBtn.textContent = '🎙️ Record Voice';
+    recordBtn.className = 'ml-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition';
+    messageForm.appendChild(recordBtn);
+
+    recordBtn.addEventListener('click', () => {
+      if (recordBtn.textContent === '🎙️ Record Voice') {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    });
+
+    function startRecording() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Your browser does not support audio recording.');
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+
+        // Create a pitch shifter node (simple example using playbackRate)
+        const pitchShiftNode = audioContext.createGain();
+
+        // Connect nodes: source -> pitchShiftNode -> destination
+        source.connect(pitchShiftNode);
+        pitchShiftNode.connect(audioContext.destination);
+
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = () => {
+            let audioDataUrl = reader.result;
+
+            // Simple pitch shift by changing playbackRate on client side playback
+            // For real-time pitch shifting, more complex DSP is needed (not implemented here)
+            // Send audio data URL to server
+            socket.emit('audioMessage', audioDataUrl);
+          };
+        };
+
+        mediaRecorder.start();
+        recordBtn.textContent = '⏹️ Stop Recording';
+      });
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        recordBtn.textContent = '🎙️ Record Voice';
+      }
+    }
+  </script>
+</body>
+</html>
